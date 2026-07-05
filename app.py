@@ -1,68 +1,201 @@
+import os
+import time
 import streamlit as st
-from rag_pipeline import RAGSystem
+from services.rag_pipeline import RAGSystem
 
-st.set_page_config(page_title="PDF RAG (Groq)", layout="wide")
+st.set_page_config(
+    page_title="Advanced RAG Chatbot",
+    page_icon="📚",
+    layout="wide"
+)
 
-# 🎨 Custom CSS
+# -------------------- CSS --------------------
 st.markdown("""
 <style>
-.chat-user {
-    background-color: #DCF8C6;
-    padding: 10px;
-    border-radius: 10px;
-    margin-bottom: 10px;
+
+.chat-user{
+    background:#DCF8C6;
+    padding:10px;
+    border-radius:10px;
+    margin-bottom:10px;
 }
-.chat-bot {
-    background-color: #F1F0F0;
-    padding: 10px;
-    border-radius: 10px;
-    margin-bottom: 10px;
+
+.chat-bot{
+    background:#F1F0F0;
+    padding:10px;
+    border-radius:10px;
+    margin-bottom:10px;
 }
+
 </style>
 """, unsafe_allow_html=True)
 
-st.title("📄 DocuRAG – PDF-based RAG Chatbot")
+# -------------------- Session --------------------
 
-# Sidebar
-with st.sidebar:
-    st.header("⚙️ Settings")
-    uploaded_file = st.file_uploader("Upload PDF", type="pdf")
-
-    if st.button("🧹 Clear Chat"):
-        st.session_state.messages = []
-
-# Session state for chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Load RAG only once
+# -------------------- Title --------------------
+
+st.title("📚 Advanced RAG Chatbot")
+
+st.caption(
+    "Upload a PDF and chat with it using Retrieval-Augmented Generation (RAG)"
+)
+
+# -------------------- Sidebar --------------------
+
+with st.sidebar:
+
+    st.header("📂 Document Manager")
+
+    uploaded_file = st.file_uploader(
+        "Upload PDF",
+        type="pdf"
+    )
+
+    if uploaded_file:
+
+        st.success("Document Uploaded")
+
+        st.write(f"**Name :** {uploaded_file.name}")
+
+        st.write(
+            f"**Size :** {uploaded_file.size/1024:.2f} KB"
+        )
+
+    st.divider()
+
+    if "rag" in st.session_state:
+
+        rag = st.session_state.rag
+
+        st.subheader("📊 Document Statistics")
+
+        st.write(f"📄 Pages : {rag.total_pages}")
+
+        st.write(f"🧩 Chunks : {rag.total_chunks}")
+
+        st.write(
+            f"🧠 Embedding : {rag.embedding_model}"
+        )
+
+        st.write("🗂 Vector DB : FAISS")
+
+        st.write("🤖 LLM : Llama-3.3-70B")
+
+        if hasattr(rag, "processing_time"):
+
+            st.write(
+                f"⏱ Processing : {rag.processing_time:.2f} sec"
+            )
+
+        st.success("✅ Ready")
+
+    st.divider()
+
+    if st.button("🧹 Clear Chat"):
+
+        st.session_state.messages = []
+
+        if "rag" in st.session_state:
+            del st.session_state.rag
+
+# -------------------- Load PDF --------------------
+
 if uploaded_file and "rag" not in st.session_state:
-    with open("temp.pdf", "wb") as f:
+
+    os.makedirs("uploads", exist_ok=True)
+
+    pdf_path = os.path.join(
+        "uploads",
+        uploaded_file.name
+    )
+
+    with open(pdf_path, "wb") as f:
         f.write(uploaded_file.read())
 
-    st.session_state.rag = RAGSystem("temp.pdf")
+    progress = st.progress(0)
 
-# Chat display
+    status = st.empty()
+
+    start = time.time()
+
+    def update_progress(message, percent):
+
+        status.info(message)
+
+        progress.progress(percent)
+
+    rag = RAGSystem()
+
+    rag.build_index(
+        pdf_path,
+        progress_callback=update_progress
+    )
+
+    rag.processing_time = time.time() - start
+
+    st.session_state.rag = rag
+
+    progress.progress(100)
+
+    status.success("✅ RAG System Ready")
+
+    st.success(
+        f"Document processed successfully in "
+        f"{rag.processing_time:.2f} seconds."
+    )
+
+# -------------------- Chat --------------------
+
 for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.markdown(f"<div class='chat-user'>🧑 {msg['content']}</div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<div class='chat-bot'>🤖 {msg['content']}</div>", unsafe_allow_html=True)
 
-# Input
-question = st.chat_input("Ask something about your PDF...")
+    if msg["role"] == "user":
+
+        st.markdown(
+            f"<div class='chat-user'>🧑 {msg['content']}</div>",
+            unsafe_allow_html=True
+        )
+
+    else:
+
+        st.markdown(
+            f"<div class='chat-bot'>🤖 {msg['content']}</div>",
+            unsafe_allow_html=True
+        )
+
+# -------------------- Input --------------------
+
+question = st.chat_input(
+    "Ask a question about your document..."
+)
 
 if question and uploaded_file:
-    # Save user message
-    st.session_state.messages.append({"role": "user", "content": question})
 
-    with st.spinner("🤖 Thinking..."):
-        answer = st.session_state.rag.ask(question)
+    st.session_state.messages.append(
+        {
+            "role":"user",
+            "content":question
+        }
+    )
 
-    # Save bot message
-    st.session_state.messages.append({"role": "bot", "content": answer})
+    with st.spinner("Thinking..."):
+
+        answer = st.session_state.rag.ask(question,
+                                          chat_history=st.session_state.messages[-15:])
+
+    st.session_state.messages.append(
+        {
+            "role":"bot",
+            "content":answer
+        }
+    )
 
     st.rerun()
 
 elif question and not uploaded_file:
-    st.warning("⚠️ Please upload a PDF first")
+
+    st.warning(
+        "Please upload a PDF first."
+    )
