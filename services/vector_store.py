@@ -77,9 +77,9 @@ def retrieve_documents(vectorstore, question):
 
             "k": k,
 
-            "fetch_k": 20,
+            "fetch_k": 30,
 
-            "lambda_mult": 0.7
+            "lambda_mult": 0.5
 
         }
 

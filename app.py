@@ -10,6 +10,7 @@ st.set_page_config(
 )
 
 # -------------------- CSS --------------------
+
 st.markdown("""
 <style>
 
@@ -35,6 +36,9 @@ st.markdown("""
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "summary" not in st.session_state:
+    st.session_state.summary = None
+
 # -------------------- Title --------------------
 
 st.title("📚 Advanced RAG Chatbot")
@@ -56,7 +60,7 @@ with st.sidebar:
 
     if uploaded_file:
 
-        st.success("Document Uploaded")
+        st.success("✅ Document Uploaded")
 
         st.write(f"**Name :** {uploaded_file.name}")
 
@@ -98,8 +102,12 @@ with st.sidebar:
 
         st.session_state.messages = []
 
+        st.session_state.summary = None
+
         if "rag" in st.session_state:
             del st.session_state.rag
+
+        st.rerun()
 
 # -------------------- Load PDF --------------------
 
@@ -138,6 +146,8 @@ if uploaded_file and "rag" not in st.session_state:
 
     st.session_state.rag = rag
 
+    st.session_state.summary = None
+
     progress.progress(100)
 
     status.success("✅ RAG System Ready")
@@ -147,55 +157,136 @@ if uploaded_file and "rag" not in st.session_state:
         f"{rag.processing_time:.2f} seconds."
     )
 
-# -------------------- Chat --------------------
+    st.rerun()
 
-for msg in st.session_state.messages:
+# -------------------- Tabs --------------------
 
-    if msg["role"] == "user":
+tab_chat, tab_summary, tab_chunks = st.tabs(
+    [
+        "💬 Chat",
+        "📄 Summary",
+        "🧩 Chunks"
+    ]
+)
+# -------------------- Chat Tab --------------------
 
-        st.markdown(
-            f"<div class='chat-user'>🧑 {msg['content']}</div>",
-            unsafe_allow_html=True
+with tab_chat:
+
+    # Chat History
+    for msg in st.session_state.messages:
+
+        if msg["role"] == "user":
+
+            st.markdown(
+                f"<div class='chat-user'>🧑 {msg['content']}</div>",
+                unsafe_allow_html=True
+            )
+
+        else:
+
+            st.markdown(
+                f"<div class='chat-bot'>🤖 {msg['content']}</div>",
+                unsafe_allow_html=True
+            )
+
+    # Chat Input
+    question = st.chat_input(
+        "Ask a question about your document..."
+    )
+
+    if question and uploaded_file:
+
+        st.session_state.messages.append(
+            {
+                "role": "user",
+                "content": question
+            }
         )
+
+        with st.spinner("Thinking..."):
+
+            answer = st.session_state.rag.ask(
+                question,
+                chat_history=st.session_state.messages[-15:]
+            )
+
+        st.session_state.messages.append(
+            {
+                "role": "bot",
+                "content": answer
+            }
+        )
+
+        st.rerun()
+
+    elif question and not uploaded_file:
+
+        st.warning(
+            "Please upload a PDF first."
+        )
+
+# -------------------- Summary Tab --------------------
+
+with tab_summary:
+
+    st.subheader("📄 AI Document Summary")
+
+    if "rag" not in st.session_state:
+
+        st.info("Upload a PDF to generate a summary.")
 
     else:
 
-        st.markdown(
-            f"<div class='chat-bot'>🤖 {msg['content']}</div>",
-            unsafe_allow_html=True
-        )
+        if st.button("📄 Generate Summary"):
 
-# -------------------- Input --------------------
+            with st.spinner("Generating Summary..."):
 
-question = st.chat_input(
-    "Ask a question about your document..."
-)
+                st.session_state.summary = (
+                    st.session_state.rag.get_summary()
+                )
 
-if question and uploaded_file:
+        if st.session_state.summary:
 
-    st.session_state.messages.append(
-        {
-            "role":"user",
-            "content":question
-        }
-    )
+            st.markdown(st.session_state.summary)
 
-    with st.spinner("Thinking..."):
+# -------------------- Chunks Tab --------------------
 
-        answer = st.session_state.rag.ask(question,
-                                          chat_history=st.session_state.messages[-15:])
+with tab_chunks:
 
-    st.session_state.messages.append(
-        {
-            "role":"bot",
-            "content":answer
-        }
-    )
+    st.subheader("🧩 Chunk Explorer")
 
-    st.rerun()
+    if "rag" not in st.session_state:
 
-elif question and not uploaded_file:
+        st.info("Upload a PDF to view chunks.")
 
-    st.warning(
-        "Please upload a PDF first."
-    )
+    else:
+
+        chunks = st.session_state.rag.get_chunks()
+
+        st.write(f"**Total Chunks : {len(chunks)}**")
+
+        for chunk in chunks:
+
+            with st.expander(
+                f"Chunk {chunk['chunk']} | Page {chunk['page']}"
+            ):
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.write(
+                        f"**Characters :** {chunk['characters']}"
+                    )
+
+                with col2:
+                    st.write(
+                        f"**Words :** {chunk['words']}"
+                    )
+
+                st.text_area(
+                    label="Chunk Content",
+                    value=chunk["text"],
+                    height=180,
+                    disabled=True,
+                    key=f"chunk_{chunk['chunk']}"
+                )
